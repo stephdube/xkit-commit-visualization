@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Homework 2 Graph</title>
+<style>
+  .link {
+    stroke: gray;
+    stroke-width: 1.5px;
+  }
+  #commit{
+    position: absolute;
+    font-family: sans-serif;
+    font-weight:lighter;  
+  }
+  .node:hover {
+    stroke: #000;
+    stroke-width: 4px;
+  }
+
+</style>
+<body>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+  <form>
+  Layout:
+    <label><input type="radio" name="layout" value="random" > Random</label>
+    <label><input type="radio" name="layout" value="radial"> Radial</label>  
+    <label><input type="radio" name="layout" value="line"> Line</label>
+    <label><input type="radio" name="layout" value="line_time"> Chronological Line</label>
+  </form>
+  <p id="commit"></p>
+<script>
+
+var width = 1250,
+    height = 600;
+
+d3.json("https://api.github.com/repos/atesh/xkit/commits", function(error, data1){
+  d3.json("https://api.github.com/repos/roguedarkjedi/xkit/commits", function(error, data2){
+
+var dataset = data1.concat(data2);
+
+var svg = d3.select("body").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+
+var fill = d3.scale.category10();
+
+var graph = {nodes:[], links:[], users:[]};
+
+graph.nodes = dataset.map(function(d) {return d});
+
+graph.users = dataset.map(function(d, i){return dataset[i].commit.author.name.toUpperCase()});
+
+graph.nodes.map(function(d, i) {
+  graph.nodes.map(function(e, j) {
+    if (dataset[i].parents[0].sha == dataset[j].sha)
+      graph.links.push({"source": i, "target": j})
+  })
+});
+
+// Generate the force layout
+var force = d3.layout.force()
+    .size([width, height])
+    .charge(-50)
+    .linkDistance(10)
+    .on("tick", tick)
+    .on("start", function(d) {})
+    .on("end", function(d){})
+
+function tick(d) {
+  graph_update(0);
+}
+
+function random_layout() {
+  force.stop();
+  graph.nodes.forEach(function(d, i) {
+    d.x = width/4 + 2*width*Math.random()/4;
+    d.y = height/4 + 2*height*Math.random()/4;
+  })
+  graph_update(500);
+}
+
+function force_layout() {
+
+ force.nodes(graph.nodes)
+      .links(graph.links)
+      .start();
+}
+
+function line_layout() {
+  force.stop();
+  // evenly spaced by index
+
+  var user_scale = d3.scale.ordinal()
+    .domain(graph.users)
+    .rangePoints([150, height - 150]);
+
+  graph.nodes.forEach(function(d, i){
+    d.y = user_scale(d.commit.author.name.toUpperCase());
+    d.x = i * 20 + 25;});
+
+  graph_update(500);
+}
+
+function line_time_layout() {
+
+  force.stop();
+
+  var timescale = d3.time.scale();
+  var max = d3.max(dataset, function(d){
+        return Date.parse(new Date(d.commit.author.date))});
+  var min = d3.min(dataset, function(d){
+        return Date.parse(new Date(d.commit.author.date))});
+  timescale.domain([min, max]);
+  timescale.range([10, width - 10]);
+
+  var user_scale = d3.scale.ordinal()
+    .domain(graph.users)
+    .rangePoints([150, height - 150]);
+
+  graph.nodes.forEach(function(d, i) {
+     d.y = user_scale(d.commit.author.name.toUpperCase());
+    d.x = timescale(Date.parse(new Date(d.commit.author.date)));
+  });
+
+  graph_update(500);
+}
+
+function radial_layout() {
+
+  force.stop();
+
+  var r = height/2;
+
+  var arc = d3.svg.arc()
+          .outerRadius(r);
+
+  var pie = d3.layout.pie()
+  .sort(function(a, b) { return a.cat - b.cat;})
+          .value(function(d, i) { return 1; }); // equal share for each point
+
+  graph.nodes = pie(graph.nodes).map(function(d, i) {
+    d.innerRadius = 0;
+    d.outerRadius = r;
+    d.data.x = arc.centroid(d)[0]+height;
+    d.data.y = arc.centroid(d)[1]+width/4;
+    d.data.endAngle = d.endAngle; 
+    d.data.startAngle = d.startAngle; 
+    return d.data;
+  })
+
+  graph_update(500);
+}
+
+function category_color() {
+  d3.selectAll("circle").transition().duration(500).style("fill", function(d) { return fill(d.cat); });
+}
+
+function category_size() {
+  d3.selectAll("circle").transition().duration(500).attr("r", function(d) { return Math.sqrt((d.cat+1)*10); });
+}
+
+function graph_update(delay) {
+
+  link.transition().duration(delay)
+      .attr("x1", function(d) { return d.target.x; })
+      .attr("y1", function(d) { return d.target.y; })
+      .attr("x2", function(d) { return d.source.x; })
+      .attr("y2", function(d) { return d.source.y; });
+
+  node.transition().duration(delay)
+      .attr("transform", function(d) { 
+        return "translate("+d.x+","+d.y+")"; 
+      });
+}
+
+d3.select("input[value=\"force\"]").on("click", force_layout);
+d3.select("input[value=\"random\"]").on("click", random_layout);
+d3.select("input[value=\"line\"]").on("click", line_layout);
+d3.select("input[value=\"line_time\"]").on("click", line_time_layout);
+d3.select("input[value=\"radial\"]").on("click", radial_layout);
+
+    // arrows drawn using this example: http://bl.ocks.org/d3noob/5155181
+svg.append("svg:defs").selectAll("marker")
+    .data(["end"])
+    .enter().append("svg:marker") 
+    .attr("id", String)
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 15)
+    .attr("refY", -1.5)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("svg:path")
+    .attr("d", "M0,-5L10,0L0,5");
+
+var link = svg.selectAll(".link")
+      .data(graph.links)
+      .enter().append("line")
+      .attr("class", "link")
+      .attr("marker-end", "url(#end)");
+
+// path lines borrowing from this code: http://bl.ocks.org/d3noob/5155181
+function tick() {
+    link.attr("d", function(d) {
+        var dx = d.target.x - d.source.x,
+            dy = d.target.y - d.source.y,
+            dr = Math.sqrt(dx * dx + dy * dy);
+        return "M" + 
+            d.source.x + "," + 
+            d.source.y + "A" + 
+            dr + "," + dr + " 0 0,9 " + 
+            d.target.x + "," + 
+            d.target.y;
+    });
+
+    node
+        .attr("transform", function(d) { 
+        return "translate(" + d.x + "," + d.y + ")"; });
+}
+
+var color = d3.scale.category10()
+  .domain([graph.users]);
+
+
+var node = svg.selectAll(".node")
+      .data(graph.nodes)
+      .enter()
+      .append("g").attr("class", "node")
+      .attr("class","node")
+      .style("fill", function(d, i){return color(dataset[i].commit.author.name.toUpperCase())})
+      .style("stroke", "black")
+      .on("mouseover", function(d, i){
+        d3.selectAll("#commit").html("Committer: " 
+        + dataset[i].commit.author.name +
+        "<br/>Date: " + dataset[i].commit.author.date +
+        "<br/>Message: '" + dataset[i].commit.message
+        + "'")});
+
+d3.selectAll("g.class").forEach
+  node.append("circle")
+    .attr("r", 4.5)
+
+force_layout();
+})});
+</script>
+</body>
+</html>
